@@ -23,17 +23,20 @@ module "dcos" {
   source  = "dcos-terraform/dcos/aws"
   version = "~> 0.1"
 
-  dcos_instance_os    = "coreos_1632.3.0"
+
+  dcos_instance_os    = "coreos_1576.5.0" #"coreos_1632.3.0"
   cluster_name        = "vz-os-upgrade-test"
-  ssh_public_key_file = "<path-to-public-key-file>"
+  ssh_public_key_file = "<INSERT_PUBLIC_KEY_HERE>"
   admin_ips           = ["${data.http.whatismyip.body}/32"]
+
+  aws_ami             = "ami-4574553d" # CoreOS 1688.4.0 in US-WEST-2 for DC/OS 1.10.9
 
   num_masters        = "3"
   num_private_agents = "3"
   num_public_agents  = "1"
 
-  dcos_version              = "1.10.9"
-  custom_dcos_download_path = "<ASK_MESOSPHERE>" 
+  dcos_version              = "1.10.8"
+  custom_dcos_download_path = "<INSERT_CUSTOM_PATH_HERE>"
 
   providers = {
     aws = "aws"
@@ -63,6 +66,7 @@ output "cluster-address" {
 output "public-agents-loadbalancer" {
   value = "${module.dcos.public-agents-loadbalancer}"
 }
+
 ```
 
 ### Manual Backup and Restore Procedure
