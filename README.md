@@ -101,7 +101,7 @@ module "dcos" {
   ssh_public_key_file = "<path-to-public-key-file>"
   admin_ips           = ["${data.http.whatismyip.body}/32"]
 
-  aws_ami             = "ami-036affea69a1101c9" # RHEL 7.6 in US-WEST-2 for DC/OS 1.10.9
+  aws_ami             = "ami-041f0422b92e03559" # RHEL 7.6 in US-WEST-2 for DC/OS 1.10.9
 
   num_masters        = "3"
   num_private_agents = "3"
