@@ -1,169 +1,70 @@
 # Backup & Restore DC/OS Instructions
 
-## Testing with Universal Installer
+## Testing with Mesosphere Legacy Installer
 
 ### Prerequisites
  - Terraform
  - AWS Access Keys
  - AWS SSH Keys
+ - Mesosphere GitHub Access
 
 ### Deploying CoreOS Machines
 
-We assume a person is already familiar with the Mesosphere's Universal Installer documentation here: https://docs.mesosphere.com/1.12/installing/evaluation/aws/.
 
-We will be using a customized version of the `main.tf` and will be using it to install a specific version of CoreOS
+This instruction allows a user to create an environment to restore the data to confirm that the restored data on another cluster with a different operating system or specifications will work. 
 
-```bash
-provider "aws" {
-  # Change your default region here
-  region = "us-west-2"
-}
-
-module "dcos" {
-  source  = "dcos-terraform/dcos/aws"
-  version = "~> 0.1"
+Currently, this is being tracked here: https://github.com/bernadinm/bar-dcos. The logs of the output can be viewed here: https://github.com/bernadinm/bar-dcos/blob/master/replacement_master_logs.out
 
 
-  dcos_instance_os    = "coreos_1576.5.0" #"coreos_1632.3.0"
-  cluster_name        = "vz-os-upgrade-test"
-  ssh_public_key_file = "<INSERT_PUBLIC_KEY_HERE>"
-  admin_ips           = ["${data.http.whatismyip.body}/32"]
+To create a cluster to test this, you can run this command below:
 
-  aws_ami             = "ami-4574553d" # CoreOS 1688.4.0 in US-WEST-2 for DC/OS 1.10.9
-
-  num_masters        = "3"
-  num_private_agents = "3"
-  num_public_agents  = "1"
-
-  dcos_version              = "1.10.8"
-  custom_dcos_download_path = "<INSERT_CUSTOM_PATH_HERE>"
-
-  providers = {
-    aws = "aws"
-  }
-
-  dcos_install_mode = "${var.dcos_install_mode}"
-}
-
-variable "dcos_install_mode" {
-  description = "specifies which type of command to execute. Options: install or upgrade"
-  default     = "install"
-}
-
-# Used to determine your public IP for forwarding rules
-data "http" "whatismyip" {
-  url = "http://whatismyip.akamai.com/"
-}
-
-output "masters-ips" {
-  value = "${module.dcos.masters-ips}"
-}
-
-output "cluster-address" {
-  value = "${module.dcos.masters-loadbalancer}"
-}
-
-output "public-agents-loadbalancer" {
-  value = "${module.dcos.public-agents-loadbalancer}"
-}
+NOTE: Using the terraform-dcos-enterprise installer
 
 ```
+ssh-add <key from https://mesosphere.onelogin.com/notes/41130>
+git clone git@github.com:mesosphere/terraform-dcos-enterprise
+cd terraform-dcos-enterprise
+git checkout verizon-upgrade-restore-test
 
-### Manual Backup and Restore Procedure
-
-#### Manual Backup Solution
-
-```bash
-# Backup ZK directory of each master
-sudo tar -cvf exhibitor-server1.tar /var/lib/dcos/exhibitor
-
-# For each master perform this command below
-# Copy Exhibitor File to Server
-scp exhibitor-server1.tar core@213.0.113.101:~/
-scp exhibitor-server2.tar core@213.0.113.102:~/
-scp exhibitor-server3.tar core@213.0.113.103:~/
+cat desired_cluster_profile.tfvars <<EOF
+dcos_version = "1.10.9"
+num_of_masters = "3"
+num_of_private_agents = "3"
+num_of_public_agents = "1"
+aws_region = "us-west-2"
+aws_bootstrap_instance_type = "m3.large"
+aws_master_instance_type = "m4.2xlarge"
+aws_agent_instance_type = "m4.2xlarge"
+aws_public_agent_instance_type = "m4.2xlarge"
+ssh_key_name = "default"
+# Inbound Master Access
+admin_cidr = "0.0.0.0/0"
+os = "coreos_1632.3.0"
+owner = "mbernadin"
+expiration = "6h"
+dcos_exhibitor_storage_backend = "aws_s3"
+dcos_exhibitor_explicit_keys = "false"
+dcos_master_discovery = "static"
+dcos_license_key_contents = "<INSERT_LICENSE_KEY_HERE>”
+EOF
+terraform apply -var-file desired_cluster_profile.tfvars
 ```
 
-### Deploying RHEL 7.6 Machines
+After deploying your cluster, you will be able to log in and deploy any application to simulate cluster usage.  When you’re ready to do operating system change,  run this command below:
 
-To deploy a RHEL machine, one 
-```bash
-provider "aws" {
-  # Change your default region here
-  region = "us-west-2"
-}
+```
+git checkout verizon-upgrade-restore-replacement-test
+vi master.tf # update master ip on line 137 with your current master ip list of all masters
 
-module "dcos" {
-  source  = "dcos-terraform/dcos/aws"
-  version = "~> 0.1"
+# Replace First Master with Changed OS RHEL 7.6
+terraform apply -var-file desired_cluster_profile.tfvars -var master_select=1 -target null_resource.master[0] -target aws_elb_attachment.internal-master-elb[0] -target aws_elb_attachment.public-master-elb[0]
 
-  cluster_name        = "vz-os-upgrade-test"
-  ssh_public_key_file = "<path-to-public-key-file>"
-  admin_ips           = ["${data.http.whatismyip.body}/32"]
+# Replace Second Master with Changed OS RHEL 7.6
+terraform apply -var-file desired_cluster_profile.tfvars -var master_select=2 -target null_resource.master[1] -target aws_elb_attachment.internal-master-elb[1] -target aws_elb_attachment.public-master-elb[1]
 
-  aws_ami             = "ami-041f0422b92e03559" # RHEL 7.6 in US-WEST-2 for DC/OS 1.10.9
-
-  num_masters        = "3"
-  num_private_agents = "3"
-  num_public_agents  = "1"
-
-  dcos_version              = "1.10.9"
-  custom_dcos_download_path = "<ASK_MESOSPHERE>" 
-
-  providers = {
-    aws = "aws"
-  }
-
-  dcos_install_mode = "${var.dcos_install_mode}"
-}
-
-variable "dcos_install_mode" {
-  description = "specifies which type of command to execute. Options: install or upgrade"
-  default     = "install"
-}
-
-# Used to determine your public IP for forwarding rules
-data "http" "whatismyip" {
-  url = "http://whatismyip.akamai.com/"
-}
-
-output "masters-ips" {
-  value = "${module.dcos.masters-ips}"
-}
-
-output "cluster-address" {
-  value = "${module.dcos.masters-loadbalancer}"
-}
-
-output "public-agents-loadbalancer" {
-  value = "${module.dcos.public-agents-loadbalancer}"
-}
+# Replace Thrid Master with Changed OS RHEL 7.6
+terraform apply -var-file desired_cluster_profile.tfvars -var master_select=3 -target null_resource.master[2] -target aws_elb_attachment.internal-master-elb[2] -target aws_elb_attachment.public-master-elb[2]
 ```
 
-#### Manual Restore Solution
+You can confirm now that DC/OS is still running.
 
-```bash
-#RESTORE COMMENCE
-sudo systemctl stop dcos-exhibitor
-sudo mv /var/lib/dcos/exhibitor/ /var/lib/dcos/exhibitor-previous.bak
-sudo tar -xvf old-zkstate.tar
-sudo cp -fr var/* /var/
-sudo chown -R dcos_exhibitor:root /var/lib/dcos/exhibitor/
-sudo systemctl reboot
-#DONE
-
-# Reboot the all agents
-sudo systemctl reboot
-```
-
-
-<!---
-## Testing
-
-```bash
-Vagrant.configure("2") do |config|
-  config.vm.box = "kaarolch/coreos-stable"
-  config.vm.box_version = "1632.3.0"
-end
-```
--->
